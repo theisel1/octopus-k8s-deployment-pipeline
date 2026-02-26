@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: randomquotes
+  namespace: randomquotes
+  labels:
+    app: randomquotes
+spec:
+  # Set per environment in Octopus, for example: Dev=1, Test=2, Prod=3
+  replicas: #{RandomQuotes.Replicas}
+  selector:
+    matchLabels:
+      app: randomquotes
+  template:
+    metadata:
+      labels:
+        app: randomquotes
+    spec:
+      containers:
+        - name: randomquotes
+          # Owner/repo are parameterized so this stays reusable across forks.
+          image: ghcr.io/#{GitHub.Owner}/#{GitHub.Repo}:#{RandomQuotes.Image.Tag}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: http://+:8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20

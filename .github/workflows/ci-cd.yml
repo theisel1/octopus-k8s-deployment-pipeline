@@ -1,0 +1,77 @@
+name: CI-CD RandomQuotes
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-release-deploy:
+    runs-on: ubuntu-latest
+    env:
+      # Change this only if your Octopus project name differs.
+      OCTOPUS_PROJECT: randomquotes-k8s
+      OCTOPUS_URL: ${{ secrets.OCTOPUS_URL }}
+      OCTOPUS_API_KEY: ${{ secrets.OCTOPUS_API_KEY }}
+      OCTOPUS_SPACE: ${{ secrets.OCTOPUS_SPACE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build metadata
+        id: meta
+        shell: bash
+        run: |
+          TAG="${GITHUB_SHA::7}"
+          OWNER_LC="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          REPO_LC="$(echo "${GITHUB_REPOSITORY#*/}" | tr '[:upper:]' '[:lower:]')"
+          IMAGE="ghcr.io/${OWNER_LC}/${REPO_LC}"
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "owner=${OWNER_LC}" >> "$GITHUB_OUTPUT"
+          echo "repo=${REPO_LC}" >> "$GITHUB_OUTPUT"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          # RandomQuotes-K8s builds from src with this Dockerfile path.
+          context: ./src
+          file: ./src/RandomQuotes.Web/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+
+      - name: Create Octopus release
+        id: create_release
+        uses: OctopusDeploy/create-release-action@v4
+        with:
+          project: ${{ env.OCTOPUS_PROJECT }}
+          # Keep release number aligned to the image tag for easy traceability.
+          release_number: ${{ steps.meta.outputs.tag }}
+          ignore_existing: "true"
+
+      - name: Deploy to Dev
+        uses: OctopusDeploy/deploy-release-action@v4
+        with:
+          project: ${{ env.OCTOPUS_PROJECT }}
+          release_number: ${{ steps.create_release.outputs.release_number }}
+          environments: |
+            Dev
+          # Pass run-specific values as prompted variables in Octopus.
+          variables: |
+            RandomQuotes.Image.Tag:${{ steps.meta.outputs.tag }}
+            GitHub.Owner:${{ steps.meta.outputs.owner }}
+            GitHub.Repo:${{ steps.meta.outputs.repo }}
