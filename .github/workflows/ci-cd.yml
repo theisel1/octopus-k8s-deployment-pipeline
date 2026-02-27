@@ -24,6 +24,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in OCTOPUS_URL OCTOPUS_API_KEY OCTOPUS_SPACE; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required secret: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Add missing values in GitHub: Settings -> Secrets and variables -> Actions"
+            exit 1
+          fi
+
       - name: Build metadata
         id: meta
         shell: bash
@@ -59,6 +75,9 @@ jobs:
         uses: OctopusDeploy/create-release-action@v4
         with:
           project: ${{ env.OCTOPUS_PROJECT }}
+          server: ${{ env.OCTOPUS_URL }}
+          api_key: ${{ env.OCTOPUS_API_KEY }}
+          space: ${{ env.OCTOPUS_SPACE }}
           # Keep release number aligned to the image tag for easy traceability.
           release_number: ${{ steps.meta.outputs.tag }}
           ignore_existing: "true"
@@ -67,6 +86,9 @@ jobs:
         uses: OctopusDeploy/deploy-release-action@v4
         with:
           project: ${{ env.OCTOPUS_PROJECT }}
+          server: ${{ env.OCTOPUS_URL }}
+          api_key: ${{ env.OCTOPUS_API_KEY }}
+          space: ${{ env.OCTOPUS_SPACE }}
           release_number: ${{ steps.create_release.outputs.release_number }}
           environments: |
             Dev
